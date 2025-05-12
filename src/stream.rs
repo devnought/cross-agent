@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Cursor, Write},
+    io::{self, Write},
     path::PathBuf,
     pin::pin,
 };
@@ -8,7 +8,7 @@ use async_fn_stream::try_fn_stream;
 use bytes::{Bytes, BytesMut};
 use futures::TryStream;
 use log::debug;
-use lz4_flex::frame::FrameEncoder;
+use lz4_flex::frame::{BlockMode, FrameEncoder, FrameInfo};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, BufReader},
@@ -24,20 +24,19 @@ pub fn build_stream(
 ) -> impl TryStream<Ok = Bytes, Error = io::Error> {
     try_fn_stream(|emitter| async move {
         let mut bytes = BytesMut::with_capacity(1024 * 8);
-        let package = root_iterator_package(roots, ["/*"]).unwrap();
+        bytes.clear();
+
+        let package = root_iterator_package(roots, ["/temp/one-file/*"]).unwrap();
         let iter = pin!(root_iterator(package));
 
-        let enc_buffer = vec![0; 8 * 1024];
-        let enc_cursor = Cursor::new(enc_buffer);
-        let mut encoder = FrameEncoder::new(enc_cursor);
-
-        let mut count = 0;
+        let enc_buffer = Vec::new();
+        let frame_info = FrameInfo::new().block_mode(BlockMode::Linked);
+        let mut encoder = FrameEncoder::with_frame_info(frame_info, enc_buffer);
 
         for entry in iter {
             let path = entry.path();
-            count += 1;
 
-            println!("--- {}", path.display());
+            debug!("--- {}", path.display());
 
             if let Ok(meta) = path.metadata() {
                 if meta.is_file() && meta.is_offline() {
@@ -50,26 +49,19 @@ pub fn build_stream(
             let mut reader = BufReader::new(file);
 
             while reader.read_buf(&mut bytes).await? > 0 {
-                encoder.write_all(&bytes)?;
+                encoder.write_all(&bytes).unwrap();
                 bytes.clear();
 
-                let cursor = encoder.get_mut();
-                let buffer = cursor.get_mut();
-                let slice = &buffer[..bytes.len()];
-
-                let emit_bytes = Bytes::copy_from_slice(slice);
+                let buffer = encoder.get_mut();
+                let emit_bytes = Bytes::copy_from_slice(buffer.as_slice());
                 emitter.emit(emit_bytes).await;
-                cursor.set_position(0);
+
+                buffer.clear();
             }
         }
 
-        debug!("Iterations: {count}");
-
-        let mut cursor = encoder.finish().unwrap();
-        let buffer = cursor.get_mut();
-        let slice = &buffer[..bytes.len()];
-
-        let emit_bytes = Bytes::copy_from_slice(slice);
+        let buffer = encoder.finish().unwrap();
+        let emit_bytes = Bytes::copy_from_slice(buffer.as_slice());
         emitter.emit(emit_bytes).await;
 
         Ok(())
