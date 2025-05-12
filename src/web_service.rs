@@ -4,7 +4,7 @@ use std::{
 };
 
 use axum::{Router, body::Body, extract::State, response::IntoResponse, routing::get};
-use futures::TryStreamExt;
+use log::debug;
 
 use crate::stream::build_stream;
 
@@ -36,6 +36,11 @@ where
 }
 
 async fn download_filesystem(State(state): State<ServiceState>) -> impl IntoResponse {
+    debug!("{:#?}", state.roots);
+
     let stream = build_stream(state.roots.into_iter());
+
+    debug!("Built stream");
+
     Body::from_stream(stream)
 }

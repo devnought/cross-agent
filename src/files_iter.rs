@@ -13,8 +13,6 @@ use nom::{
 };
 use walkdir::{DirEntry, WalkDir};
 
-use crate::file_offline::FileOffline;
-
 #[derive(Debug)]
 pub struct RootIteratorPackage {
     globset: GlobSet,

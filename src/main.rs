@@ -1,8 +1,6 @@
-use std::{io::Write, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use humanize_bytes::humanize_bytes_decimal;
-use normpath::PathExt;
 
 mod file_offline;
 mod files_iter;
@@ -59,9 +57,16 @@ enum FilesCommands {
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
+    simplelog::CombinedLogger::init(vec![simplelog::TermLogger::new(
+        log::LevelFilter::Trace,
+        simplelog::Config::default(),
+        simplelog::TerminalMode::Mixed,
+        simplelog::ColorChoice::Auto,
+    )])?;
+
     match args.command {
         Commands::Files(command) => match command {
-            FilesCommands::List { root } => {
+            FilesCommands::List { root: _ } => {
                 // let iter = files::file_iter(root.iter(), paths.iter())
                 //     .filter_map(|e| e.path().normalize().ok());
                 // let mut lock = std::io::stdout().lock();
@@ -72,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::System => sys_info::display(),
-        Commands::PathSize { root } => {
+        Commands::PathSize { root: _ } => {
             // let size = files::file_iter(root.iter(), paths.iter())
             //     .filter_map(|e| e.metadata().ok())
             //     .map(|m| m.len())
