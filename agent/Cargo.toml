@@ -1,0 +1,21 @@
+[package]
+edition = "2024"
+name = "agent"
+version = "0.1.0"
+
+[dependencies]
+anyhow.workspace = true
+async-fn-stream.workspace = true
+axum = { workspace = true, features = ["ws"] }
+bytes.workspace = true
+clap = { workspace = true, features = ["derive"] }
+filesystem-iter.workspace = true
+futures.workspace = true
+humanize-bytes.workspace = true
+log.workspace = true
+lz4_flex.workspace = true
+normpath.workspace = true
+rkyv.workspace = true
+simplelog.workspace = true
+sysinfo.workspace = true
+tokio = { workspace = true, features = ["full"] }

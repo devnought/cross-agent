@@ -18,6 +18,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
+name = "agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-fn-stream",
+ "axum",
+ "bytes",
+ "clap",
+ "filesystem-iter",
+ "futures",
+ "humanize-bytes",
+ "log",
+ "lz4_flex",
+ "normpath",
+ "rkyv",
+ "simplelog",
+ "sysinfo",
+ "tokio",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -292,32 +313,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cross-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-fn-stream",
- "axum",
- "bytes",
- "clap",
- "fauxgen",
- "futures",
- "globset",
- "humanize-bytes",
- "indexmap",
- "log",
- "lz4_flex",
- "nom",
- "normpath",
- "rkyv",
- "simplelog",
- "sysinfo",
- "tokio",
- "walkdir",
- "windows",
-]
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,6 +373,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "filesystem-iter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fauxgen",
+ "globset",
+ "indexmap",
+ "log",
+ "nom",
+ "walkdir",
+ "windows",
 ]
 
 [[package]]

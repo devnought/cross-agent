@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-mod file_offline;
-mod files_iter;
 mod stream;
 mod sys_info;
 mod web_service;

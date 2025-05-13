@@ -13,6 +13,8 @@ use nom::{
 };
 use walkdir::{DirEntry, WalkDir};
 
+pub mod file_offline;
+
 #[derive(Debug)]
 pub struct RootIteratorPackage {
     globset: GlobSet,

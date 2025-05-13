@@ -6,17 +6,13 @@ use std::{
 
 use async_fn_stream::try_fn_stream;
 use bytes::{Bytes, BytesMut};
+use filesystem_iter::{file_offline::FileOffline, root_iterator, root_iterator_package};
 use futures::TryStream;
 use log::debug;
 use lz4_flex::frame::{BlockMode, FrameEncoder, FrameInfo};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, BufReader},
-};
-
-use crate::{
-    file_offline::FileOffline,
-    files_iter::{root_iterator, root_iterator_package},
 };
 
 pub fn build_stream(
@@ -43,6 +39,9 @@ pub fn build_stream(
 
             // Build up LZ4 compression for file contents
             let frame_info = FrameInfo::new().block_mode(BlockMode::Linked);
+
+            // Ensure buffer is clear
+            enc_buffer.clear();
             let mut encoder = FrameEncoder::with_frame_info(frame_info, &mut enc_buffer);
 
             let file = File::open(path).await?;
@@ -63,7 +62,6 @@ pub fn build_stream(
             let buffer = encoder.finish().unwrap();
             let emit_bytes = Bytes::copy_from_slice(buffer.as_slice());
             emitter.emit(emit_bytes).await;
-            buffer.clear();
 
             // Temp file contents separator for debugging
             emitter.emit(Bytes::copy_from_slice(b"ZZZZZZZZ")).await;
