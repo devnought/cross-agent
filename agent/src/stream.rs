@@ -36,8 +36,10 @@ pub fn build_stream(
         let mut enc_buffer = Vec::new();
         let mut arena = Arena::new();
 
-        let package = root_iterator_package(roots, ["/temp/one-file/*"]).unwrap();
+        let package = root_iterator_package(roots, &["*"]).unwrap();
         let iter = pin!(root_iterator(package));
+
+        debug!("About to start iterating");
 
         for entry in iter {
             let path = entry.path();
@@ -72,6 +74,11 @@ pub fn build_stream(
                         .as_slice(),
                 ))
                 .await;
+
+            // Nothing left to do if it's a directory.
+            if path.is_dir() {
+                continue;
+            }
 
             // Build up LZ4 compression for file contents
             let frame_info = FrameInfo::new().block_mode(BlockMode::Linked);

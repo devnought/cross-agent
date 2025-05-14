@@ -3,6 +3,13 @@ edition = "2024"
 name = "agent"
 version = "0.1.0"
 
+[lib]
+name = "agentfs"
+crate-type = ["staticlib"]
+
+[[bin]]
+name = "agent"
+
 [dependencies]
 anyhow.workspace = true
 async-fn-stream.workspace = true
