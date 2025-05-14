@@ -14,8 +14,10 @@ futures.workspace = true
 humanize-bytes.workspace = true
 log.workspace = true
 lz4_flex.workspace = true
+md-5.workspace = true
 normpath.workspace = true
 rkyv.workspace = true
+sha3.workspace = true
 simplelog.workspace = true
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }
