@@ -1,3 +1,13 @@
+// TODO:
+// Need to check if a path is currently mounted or not. If it is,
+// send a record that points to where the real physical file lives
+// so it is not sent multiple times across the wire.
+// (parse /proc/mounts)
+//
+// Check if a file is a sparse file. If it is, skip over any empty
+// segments of the file, and only send the real data.
+// https://gitlab.com/asuran-rs/hole-punch
+
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -36,7 +46,7 @@ pub fn build_stream(
         let mut enc_buffer = Vec::new();
         let mut arena = Arena::new();
 
-        let package = root_iterator_package(roots, &["*"]).unwrap();
+        let package = root_iterator_package(roots, &["**"]).unwrap();
         let iter = pin!(root_iterator(package));
 
         debug!("About to start iterating");
@@ -97,6 +107,8 @@ pub fn build_stream(
                 encoder.write_all(&bytes).unwrap();
                 md5.update(&bytes);
                 sha256.update(&bytes);
+
+                // debug!("Handled {} bytes", bytes.len());
 
                 bytes.clear();
 

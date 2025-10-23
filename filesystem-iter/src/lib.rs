@@ -3,23 +3,47 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use anyhow::Ok;
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use indexmap::IndexSet;
-use log::debug;
-use nom::{
-    Finish, IResult, Parser,
-    bytes::complete::{escaped_transform, is_not},
-    character::complete::one_of,
-};
 use walkdir::{DirEntry, WalkDir};
 
 pub mod file_offline;
+pub mod parse_mounts;
 
 #[derive(Debug)]
 pub struct RootIteratorPackage {
     globset: GlobSet,
     pattern_paths: Vec<(PathBuf, bool)>,
     root_paths: Vec<PathBuf>,
+}
+
+// Ok past self, why do this root iterator package stuff?
+// I should just have a single parser for *all* paths
+// - might have to be multi-stage
+// - first add them all to a big hashset to dedupe raw patterns
+// - construct a hashmap of all processed patterns that have gone through
+//      `root_parser` of type HashMap<Option(&Path), HashSet<&str>> (maybe `root_parser` changes
+//            and only returns the remainder)
+//      - the `None` case is for all loose patterns that have no root
+//      - the set of `str` is all the pattern remainders
+// - if an entry's set contains `**` or `**/*`, discard all other remainders.
+//
+// Basically just go ham on pattern set minimization.
+
+// ... ok I'm trying to solve two problems here:
+//      - get a set of root paths from all the patterns (including paths that resolve to files, aka
+//          ones that have no special glob characters)
+//          - for said root paths, I want to know if everything in that root can be matched or not
+//              as an optimization for match/not-match logic when I go back and iterate over `/`
+//      - glob pattern minimization
+//          - if certain patterns are more generous in their matching, aka two patterns that share
+//              the same root, but one ends with `**` earlier in its path, discard all others.
+pub fn parse_patterns<IP, P>(patterns: IP)
+where
+    P: AsRef<str>,
+    IP: IntoIterator<Item = P>,
+{
 }
 
 pub fn root_iterator_package<IR, IP, R, P>(
@@ -33,15 +57,14 @@ where
     P: AsRef<str>,
 {
     let iter = patterns.into_iter().filter_map(|p| {
-        let pattern = p.as_ref();
+        let pattern = p.as_ref().trim();
+        let glob = GlobBuilder::new(pattern)
+            .literal_separator(true)
+            .build()
+            .ok()?;
+        let (root_path, match_all_recurse) = root_parser(pattern)?;
 
-        // TODO: if there is no greatest common root, still need to yeild the pattern.
-        // If the path is empty, also skip it, but yeild the pattern.
-        // Might want to check if the pattern is an empty string.
-        let (root_path, skippable) = greatest_root_path(pattern).ok()?;
-        let glob = Glob::new(pattern).ok()?;
-
-        Some((root_path, glob, skippable))
+        Some((root_path.into(), glob, match_all_recurse))
     });
 
     let mut globset_builder = GlobSetBuilder::new();
@@ -53,8 +76,8 @@ where
     //   - Append each root to each pattern for Windows machines.
     // - if a pattern starts with a `RootDir` or a `Prefix` + `RootDir` component, be smarter on how we
     //  check if we've visited a folder.
-    for (path, glob, skippable) in iter {
-        pattern_paths.insert((path, skippable));
+    for (path, glob, match_all_recurse) in iter {
+        pattern_paths.insert((path, match_all_recurse));
         globset_builder.add(glob);
     }
 
@@ -73,8 +96,8 @@ pub fn root_iterator(package: RootIteratorPackage) {
     let mut skip_paths = HashSet::new();
 
     // Iterate over the root paths parsed from the glob patterns
-    for (path, skippable) in package.pattern_paths {
-        if skippable {
+    for (path, recursive_match_all) in package.pattern_paths {
+        if recursive_match_all {
             skip_paths.insert(path.clone());
         }
 
@@ -125,25 +148,126 @@ pub fn root_iterator(package: RootIteratorPackage) {
     }
 }
 
-fn greatest_root_path(input: &str) -> anyhow::Result<(PathBuf, bool)> {
-    let (remaining, path) = root_parser(input)
-        .finish()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    let skippable = matches!(remaining, "*" | "**/*");
-
-    // Strip trailing slash
-    let path_ref = if path.ends_with('/') {
-        &path[..path.len() - 1]
-    } else {
-        &path
-    };
-
-    debug!("Remaining: `{remaining}`");
-
-    Ok((path_ref.into(), skippable))
+struct RootParserData<'a> {
+    root: &'a Path,
+    recursive_match_all: bool,
+    remainder: &'a str,
 }
 
-fn root_parser(input: &str) -> IResult<&str, String> {
-    escaped_transform(is_not("\\*![]{}"), '\\', one_of("*![]{}")).parse(input)
+fn root_parser(input: &str) -> Option<(&Path, bool)> {
+    // Early return on some trivial patterns
+    match input {
+        "" => return None,
+        "**" | "**/*" | "/**" | "/**/*" => return Some((Path::new("/"), true)),
+        _ => {}
+    }
+
+    // If you're not a trivial pattern, and are missing a starting slash,
+    // pattern has no parseable root.
+    if !input.starts_with("/") {
+        return None;
+    }
+
+    // Start the meat of the pattern processing
+    let mut index = 0;
+    let mut last_char = None;
+    let mut last_separator = None;
+
+    for char in input.chars() {
+        match char {
+            '/' => last_separator = Some(index),
+            '*' | '[' | ']' | '{' | '}' | '?' | '!' if last_char != Some('\\') => break,
+            _ => {}
+        }
+
+        last_char = Some(char);
+        index += 1;
+    }
+
+    if index == input.len() {
+        Some((Path::new(input), is_recursive_match_all(input)))
+    } else if let Some(last) = last_separator {
+        let end = last + 1;
+
+        Some((
+            Path::new(&input[..end]),
+            is_recursive_match_all(&input[end..]),
+        ))
+    } else {
+        None
+    }
+}
+
+fn is_recursive_match_all(input: &str) -> bool {
+    matches!(input, "**" | "**/*")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_root_parser() {
+        let input = "/foo/bar/*/test";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), false)), actual);
+
+        let input = "/foo/bar/**/test";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), false)), actual);
+
+        // SHOULD THIS FAIL? Technically there is no greatest
+        // root, as the whole thing has a single match,
+        // **HOWEVER** it matches a very specific file with
+        // a fully qualified path
+        let input = "/foo/bar/test";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/test"), false)), actual);
+
+        // SHOULD THIS FAIL? Technically there is no greatest
+        // root, as the whole thing has a single match...
+        let input = "hello";
+        let actual = root_parser(input);
+        assert_eq!(None, actual);
+
+        let input = "ohhell*there";
+        let actual = root_parser(input);
+        assert_eq!(None, actual);
+
+        let input = "/foo/bar/*/test/**/*";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), false)), actual);
+
+        let input = "/foo/bar/**";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), true)), actual);
+
+        let input = "/foo/bar/*";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), false)), actual);
+
+        let input = "/foo/bar/**/*";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/"), true)), actual);
+
+        let input = "/foo/bar/\\*";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/*"), false)), actual);
+
+        let input = "/foo/bar/\\*/hello";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/foo/bar/*/hello"), false)), actual);
+
+        let input = "**/*";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/"), true)), actual);
+
+        let input = "**";
+        let actual = root_parser(input);
+        assert_eq!(Some((Path::new("/"), true)), actual);
+
+        let input = "";
+        let actual = root_parser(input);
+        assert_eq!(None, actual);
+    }
 }
